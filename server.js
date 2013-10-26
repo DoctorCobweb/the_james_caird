@@ -23,7 +23,7 @@ AWS.config.update({"accessKeyId": process.env.AWS_ACCESS_KEY_ID,
                    "secretAccessKey": process.env.AWS_SECRET_ACCESS_KEY,
                    "region": process.env.AWS_REGION});
 
-console.log(process.env);
+//console.log(process.env);
 
 
 //The http server will listen to an appropriate port, or default to
@@ -74,8 +74,14 @@ app.get('/api/electronic_tickets/google_wallet', function (req, res) {
 */
 
 
+app.get('/', function (req, res) {
+  return res.send('hello there dude');
+});
+
+
+
 //platying around with S3, creating buckets and filling them.
-app.get('/api/test_apple_tickets/', function (req, res) {
+app.get('/api/apple/', function (req, res) {
   var s3 = new AWS.S3();
     s3.listBuckets(function(err, data) {
       for (var index in data.Buckets) {
@@ -103,6 +109,10 @@ app.get('/api/test_apple_tickets/', function (req, res) {
       });
     }
   });
+
+
+  return res.send('from THE_JAMES_CAIRD: set up the bucket');
+
 });
 	
 
