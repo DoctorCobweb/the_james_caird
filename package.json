@@ -1,0 +1,17 @@
+{
+    "name":"the-james-caird-eticket-service"
+  , "version":"0.0.1"
+  , "description":"app the makes all the etickets like apple pkpasses etc"    
+  , "dependencies": {
+        "express":"~3.1.0"
+      , "path":"~0.4.9"
+      , "express-validator": "0.8.0"
+      , "underscore": "1.5.2"
+      , "aws-sdk": "1.10.0"
+      , "request": "2.27.0"
+    }
+  , "engines": {
+        "node": "0.8.25"
+      , "npm": "1.2.x"
+  }
+}
