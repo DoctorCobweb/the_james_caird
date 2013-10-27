@@ -75,6 +75,406 @@ app.get('/api/apple', function (req, res) {
   console.log('req.query:');
   console.log(req.query); //should have gig and order id sent thru in querystring
 
+
+  start_pkpass_generation(req, res, function (err) {
+    if (err) {
+      throw err;
+    }
+  });
+
+});
+
+
+
+
+
+//TODO: fix pkpass error, clean up tmp dir after success, refactor pkpass generation
+//create a tmp dir. check if it already exists, if so then try another rand number
+//nav into the tmp dir
+//download all the contents of the S3 bucket pertaining to the gig
+//create the pkpass
+//upload it to S3 in the relevant gig dir, get url for clientside to download pkpass
+//cleanup tmp dir by deleting it and the contents
+//return the pkpass to user (or should it be a url)
+//
+//could u start the pkpass process from initialize() clientside and just return the 
+//final url for downloading the pkpass to the button to call if pressed.
+
+function start_pkpass_generation(req, res, callback) {
+  var s3 = new AWS.S3();
+  var random_int; 
+  var MIN_RAND = 1000;
+  var MAX_RAND = 9999;
+  var extracted_keys = []; //array of items for download from s3 for gig
+
+
+  //Returns a random integer between min and max
+  //Using Math.round() will give you a non-uniform distribution!
+  function get_random_int(min, max) {
+    return Math.floor(Math.random() * (max - min + 1) + min);
+  }
+
+
+  function create_tmp_dir() {
+    random_int = get_random_int(MIN_RAND, MAX_RAND);
+
+    //check if the tmp dir already exists. if it does, another user is currently
+    //generating their pkpass and you dont want to overwrite their pkpass details
+    //method: try to read the dir. if err is non null in callback then the dir exists.
+    //we want to have an err null which means the dir does _not_ exist.
+    fs.readdir(process.env.PWD + '/tmp' + random_int, function (err, files) {
+      if (err) {
+        //dir does not exist, cool. go onto the next step
+        console.log('/tmp' + random_int + ' does not exist. GOOD');
+   
+        make_the_tmp_dir();
+      } else {
+        //dir does exist
+        console.log('/tmp' + random_int + ' does exist. BAD, try another dir');
+
+        //call this function again which will create a new random_int to use
+        create_tmp_dir();
+      }
+    });
+  }
+
+
+  function make_the_tmp_dir() {
+
+    fs.mkdir(process.env.PWD + '/tmp' + random_int, function (err) {
+      if (err) {
+        console.log(err); 
+        return callback(err);
+      } else {
+        console.log('making ' + process.env.PWD + '/tmp' + random_int + ' dir');
+  
+        //now get the list of all the files from S3 for the gig in question
+        get_the_list_of_files_from_s3();
+      }
+    });          
+  }
+
+
+  function get_the_list_of_files_from_s3() {
+    var slash_index;
+    var single_key;
+
+    //list all the objects in the gig_id dir
+    s3.listObjects({
+        Bucket: process.env.AWS_S3_BUCKET_APPLE,
+        Prefix: req.query.gig_id + '/'
+      }, 
+      function (err, data) {
+        if (err) {
+          return callback(err);
+        } else {
+          console.log('got a list of S3 objects for Bucket: ' 
+                      + process.env.AWS_S3_BUCKET_APPLE);
+
+          console.log(data);
+
+          for (var i in data.Contents) {
+            slash_index = (data.Contents[i].Key).indexOf('/');
+            single_key = (data.Contents[i].Key).substring(slash_index + 1);
+        
+            //skip over any items which are empty or contain another slash ie. a sub
+            //folder.
+            if (single_key === '' || (single_key.indexOf('/') > -1 )) {
+              continue;
+            }             
+
+            extracted_keys[i] = single_key;
+          }
+
+
+          //does the same thing as the continue statement above...
+          /*
+          for (var j in extracted_keys) {
+            if (extracted_keys[j] === '' || (extracted_keys[j].indexOf('/') > -1 )) {
+              delete extracted_keys[j];
+            }             
+          }
+          */
+
+
+          console.log('extracted keys array is:');
+          console.log(extracted_keys);
+
+          //got all the items in the S3 bucket for the gig we are after. now go and 
+          //download them and write to the filesystem
+          download_listed_files_from_s3();
+
+        }
+      }
+    );
+  }
+
+
+  function download_listed_files_from_s3() {
+ 
+    for (var k in extracted_keys) {
+      console.log('getting an object from S3 called: ' + extracted_keys[k]);
+
+      var params = {
+          Bucket: process.env.AWS_S3_BUCKET_APPLE,
+          Key: req.query.gig_id + '/' + extracted_keys[k]
+      
+      };
+
+      var path_for_the_file = process.env.PWD + '/tmp' + random_int 
+                                  + '/' + extracted_keys[k];
+
+
+      //WAY 1: verbose way...doesnt work because of async calls. for loop is finished
+      //before the first file's callback returns!
+      /*
+      s3.getObject(params, 
+        function (err, data) {
+          if (err) {
+            return callback(err);
+          } else {
+            //data.Body is of type Buffer
+            console.log('GOT A OBJECT FROM S3....');
+            console.log(data);
+            var path_for_the_file_1 = process.env.PWD + '/tmp' + random_int 
+                                  + '/' + extracted_keys[k];
+
+            console.log('path_for_the_file_1' + path_for_the_file_1);
+            fs.writeFile(path_for_the_file_1, data.Body, function (err) {
+              if (err) {
+                return callback(err);
+              } else {
+               console.log('It\'s saved!');
+              }
+            }); 
+
+          }
+        }
+      ); 
+      */
+
+
+
+      //TODO: ERROR HANDLUNG
+      //WAY 2: using pipes. this works but there's no ERRROR HANDLING!!!!!
+      //console.log(path_for_the_file);
+      var file = fs.createWriteStream(path_for_the_file); 
+      s3.getObject(params).createReadStream().pipe(file);
+
+    }
+
+
+    console.log('looking into the new dir for files...');
+    fs.readdir('./tmp' + random_int, function (err, files) {
+      if (err) {
+        return callback(err);
+      }
+
+      for (var i in files) {
+        console.log('files[' + i + ']' + files[i]);
+      }
+
+    });
+
+    //got the files, now make the pkpass
+    make_the_pkpass();
+
+  }
+
+  function make_the_pkpass() {
+
+
+
+    //START EXPERIMENTAL SECTION ---------------------
+
+    var manifest_content = {};
+    var pass_name = 'testler' + '.pkpass';
+
+    //the directory relative to shackelton/ to execute commands.
+    //will/should be different for different pkpasses but for now its
+    //hardcoded during demoing stage
+    //var wrk_dir = process.env.PWD + '/tmp' + random_int + '/';
+
+
+    //**********************************
+    //ERRORS occur when using the tmpxxxx dir. but everything works when you use a prior
+    //made dir (even with the Certificates.p12 and WWDR.pem copied from a previous S3 
+    //download => it is not the certs authenticity).
+    var wrk_dir ='./tmp' + random_int + '/';
+    //var wrk_dir ='./a_debugging_pkpass/';
+
+
+    //-------------------------------------------------------------------------
+    //BUG?: what happens if manifest.json has not been completely created
+    //and the .pkpass routines finish before that? incomplete manifest.json
+    //file -> invalid pass! callback embedding of these 2 procedures..?
+    //create the manifest.json file programatically
+    fs.readdir(wrk_dir, function(err, names){
+
+      //compute hash of pass.json file
+      exec('openssl sha1 pass.json', {cwd: wrk_dir}, function(err, stdout, stderr){
+        if(!err) {
+          console.log('hello from pass.json sha1 block');
+
+          var content = stdout;
+          var start_index_of_hash = content.indexOf('=') + 2
+          var hash = content.substring(start_index_of_hash, content.length - 1);
+
+          //put the (pass.json, hash) pair into the manifest_content object
+          manifest_content["pass.json"] = hash;
+        } else {
+          console.log('Pkpass:[' + req.query.gig_id 
+            + ']' + 'OPENSSL_ERROR: Unable to sha1 pass.json file.' + err);
+        }
+      });
+
+      console.log('Pkpass:[' + req.query.gig_id
+        + ']' + 'The current directory contains image files:');
+
+
+     for(var i = 0; i < names.length; i++) {
+       if (names[i].indexOf('.png') >= 0){
+         console.log('Pkpass:[' + req.query.gig_id + ']' + names[i]);
+         exec('openssl sha1 ' + names[i], {cwd: wrk_dir}, function(err, stdout, stderr){
+           if(!err){
+             //console.log('stdout: ' + stdout);
+             //console.log('names: ' + names[i]);
+
+             var content = stdout;
+             var start_index_of_hash = content.indexOf('=') + 2
+             var left_brace = content.indexOf('(');
+             var right_brace = content.indexOf(')');
+
+
+             //also, strip the newline character from end of hash.
+             var hash = content.substring(start_index_of_hash, content.length - 1);
+             var file_name = content.substring(left_brace + 1, right_brace);
+
+
+             //put the (file_name, hash) pair into the manifest_content obj.
+             manifest_content[file_name] = hash;
+
+             console.log('Pkpass:[' + req.query.gig_id + ']'
+               + 'manifest_content.' + file_name + '=' + manifest_content[file_name]);
+
+
+             fs.writeFile( wrk_dir + 'manifest.json', JSON.stringify(manifest_content),
+               function(err){
+                     if (err) {
+                       throw err;
+                     } else {
+                       console.log('Pkpass:[' + req.query.gig_id
+                         + ']' + 'FILE_SAVED: manifest.json');
+               } //end if-else file saved OK
+             }); //end writeFile manifest.json
+           } else {
+             console.log('Pkpass:[' + req.query.gig_id
+               + ']' + 'OPENSSL_ERROR: Unable to sha1 ' + names[i] + ' file.');
+           }
+         }); //end calc sha1 for .png files
+       } //end if-names end in .png
+     } //end for-loop
+   }); //end fs.readdir
+
+   //--------------------------------------------------------------------------
+
+
+    //create a .pkpass pass using Openssl and  Certificates.p12, WWDR.pem files
+    //export Certificates.p12 into a different format, passcertificate.pem
+    exec("openssl pkcs12 -in Certificates.p12 -clcerts -nokeys -out passcertificate.pem -passin pass:", {cwd: wrk_dir}, function(err, stdout, stderr){
+      if(!err){
+        var content = stdout;
+        console.log('Pkpass:[' + req.query.gig_id + ']' + 'OPENSSL_SUCCESS: Certificates.p12 -> passcertificate.pem');
+
+        //export the key as a separate file, passkey.pem
+        exec("openssl pkcs12 -in Certificates.p12 -nocerts -out passkey.pem -passin pass: -passout pass:12345", {cwd: wrk_dir}, function(err, stdout, stderr){
+          if(!err){
+            var content = stdout;
+            console.log('Pkpass:[' + req.query.gig_id + ']' + 'OPENSSL_SUCCESS: Certificates.p12 -> passkey.pem');
+
+            //create the signature file.
+            exec("openssl smime -binary -sign -certfile WWDR.pem -signer passcertificate.pem -inkey passkey.pem -in manifest.json -out signature -outform DER -passin pass:12345", {cwd: wrk_dir}, function(err, stdout, stderr){
+              if(!err){
+                var content = stdout;
+                console.log('Pkpass:[' + req.query.gig_id
+                  + ']' + 'OPENSSL_SUCCESS: Created the signature file.');
+
+                //finally, create the .pkpass zip file, freehugcoupon.pkpass
+                exec("zip -r " + pass_name + " manifest.json pass.json signature logo.png logo@2x.png icon.png icon@2x.png strip.png strip@2x.png", {cwd: wrk_dir}, function(err, stdout, stderr){
+                  if(!err){
+                    var content = stdout;
+                    console.log('Pkpass:[' + req.query.gig_id + ']' + stdout);
+                    console.log('Pkpass:[' + req.query.gig_id
+                      + ']' + 'ZIP_SUCCESS: Created the .pkpass file.');
+
+
+                    //check to see if the file exists before allowing it to be downloaded.
+                    fs.exists( wrk_dir + pass_name, function(exists){
+                      if (exists){
+
+                        //you must set the mime type for the content to respond with
+                        //so safari can recognize it.
+                        //does this also work for other mobile browsers?
+                        //e.g. mobile chrome browser on iphone?
+                        res.contentType('application/vnd.apple.pkpass');
+
+                        //DELIVER THE FINAL PRODUCT: the pass !!!
+                        res.download( wrk_dir + pass_name);
+                      } else {
+                        console.log('Pkpass:[' + req.query.gig_id
+                          + ']' + pass_name + ' does not exist, yet.');
+                      }
+                    });
+                  } else {
+                    console.log('Pkpass:[' + req.query.gig_id + ']'
+                      + 'ZIP_ERROR: Could not create the .pkpass file.');
+                  }
+                }); //end zip exec
+              } else {
+                console.log('Pkpass:[' + req.query.gig_id + ']'
+                  + 'OPENSSL_ERROR: Could not make signature file.');
+              }
+            });
+          } else {
+            console.log('Pkpass:[' + req.query.gig_id + ']'
+              + 'OPENSSL_ERROR: Could not make passkey.pem');
+          }
+        });
+      } else {
+        console.log('Pkpass:[' + req.query.gig_id + ']'
+          + 'OPENSSL_ERROR: Could not make passcertificate.pem'+ stderr);
+      }
+    });
+
+    //END EXPERIMENTAL SECTION ---------------------
+
+  }
+
+
+
+  //start the function call process
+  create_tmp_dir();
+
+
+} //end start_pkpass_generation()
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+  //START %%%%%%%%%%% JUNK-STAGING AREA %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
   /*
   s3.createBucket({Bucket: process.env.AWS_S3_BUCKET_APPLE}, function (err, data) {
     if (err) {
@@ -97,8 +497,9 @@ app.get('/api/apple', function (req, res) {
   });
   */
 
+
+  /*
   //list all the S3 buckets
-  var s3 = new AWS.S3();
     s3.listBuckets(function(err, data) {
       console.log('=====> getting the list of all S3 buckets...');
       for (var index in data.Buckets) {
@@ -106,252 +507,16 @@ app.get('/api/apple', function (req, res) {
         console.log("Bucket: ", bucket.Name, ' : ', bucket.CreationDate);
       }
   });
-
-
-
-  s3.getObject({
-      Bucket: process.env.AWS_S3_BUCKET_APPLE,
-      'Key': req.query.gig_id + '/pass.json'
-      }
-    , function (err, data) {
-        if (err) {
-          console.log(err); 
-        } if (!data) {
-          console.log('data is null');
-        } else {
-          console.log('=====> got \'pass.json\' object from s3:');
-          console.log(data); //data.Body is of type Buffer
-          var _body = data.Body.toString('utf8');
-          console.log('body of the \'pass.json\' object in s3 is: ' + _body);
-
-          
-          console.log('saving to ephemeral filesystem...');
-          fs.writeFile('pass.json', _body, function (err) {
-            if (err) {
-              console.log(err); 
-            } else {
-              console.log('wrote pass.json to the filesys');
-              console.log('reading the dir...');
-              fs.readdir('.', function (err, files) {
-                if (err) {
-                  console.log(err);
-                } else {
-                  for (var i in files) {
-                    console.log('files[' + i + ']' + files[i]);
-                  }
-                }
-              });
-              
-            }
-          });
-
-        }
-      }
-  );
-
-
-
-
-  /*
-  s3.getObject({
-      Bucket: process.env.AWS_S3_BUCKET_APPLE,
-      'Key': 'gig_id'
-      }
-    , function (err, data) {
-        if (err) {
-          console.log(err); 
-        } else {
-          console.log('=====> got object from s3:');
-          console.log(data);
-          //data.Body is of type Buffer
-          var body = data.Body.toString('utf8');
-          console.log('body of the object in s3 is: '+ body);
-
-        }
-      }
-  );
   */
 
 
 
-
-  //start experimental section ---------------------
-  /*
-
-    var pass_name = req.params['gig_id'] + '.pkpass';
-
-    //the directory relative to shackelton/ to execute commands.
-    //will/should be different for different pkpasses but for now its
-    //hardcoded during demoing stage
-    var wrk_dir = './etix/apple/' + req.params['gig_id'] + '/';
-
-
-    //-------------------------------------------------------------------------
-    //BUG?: what happens if manifest.json has not been completely created
-    //and the .pkpass routines finish before that? incomplete manifest.json
-    //file -> invalid pass! callback embedding of these 2 procedures..?
-    //create the manifest.json file programatically
-    fs.readdir(wrk_dir, function(err, names){
-
-      //compute hash of pass.json file
-      exec('openssl sha1 pass.json', {cwd: wrk_dir}, function(err, stdout, stderr){
-        if(!err) {
-          console.log('hello from pass.json sha1 block');
-
-          var content = stdout;
-          var start_index_of_hash = content.indexOf('=') + 2
-          var hash = content.substring(start_index_of_hash, content.length - 1);
-
-          //put the (pass.json, hash) pair into the manifest_content object
-          manifest_content["pass.json"] = hash;
-        } else {
-          console.log('Pkpass:[' + req.params['gig_id']
-            + ']' + 'OPENSSL_ERROR: Unable to sha1 pass.json file.' + err);
-        }
-      });
-
-      console.log('Pkpass:[' + req.params['gig_id']
-        + ']' + 'The current directory contains image files:');
-
-
-     for(var i = 0; i < names.length; i++) {
-       if (names[i].indexOf('.png') >= 0){
-         console.log('Pkpass:[' + req.params['gig_id'] + ']' + names[i]);
-         exec('openssl sha1 ' + names[i], {cwd: wrk_dir}, function(err, stdout, stderr){
-           if(!err){
-             //console.log('stdout: ' + stdout);
-             //console.log('names: ' + names[i]);
-
-             var content = stdout;
-             var start_index_of_hash = content.indexOf('=') + 2
-             var left_brace = content.indexOf('(');
-             var right_brace = content.indexOf(')');
-
-
-             //also, strip the newline character from end of hash.
-             var hash = content.substring(start_index_of_hash, content.length - 1);
-             var file_name = content.substring(left_brace + 1, right_brace);
-
-
-             //put the (file_name, hash) pair into the manifest_content obj.
-             manifest_content[file_name] = hash;
-
-             console.log('Pkpass:[' + req.params['gig_id'] + ']'
-               + 'manifest_content.' + file_name + '=' + manifest_content[file_name]);
-
-
-             fs.writeFile( wrk_dir + 'manifest.json', JSON.stringify(manifest_content),
-               function(err){
-                     if (err) {
-                       throw err;
-                     } else {
-                       console.log('Pkpass:[' + req.params['gig_id']
-                         + ']' + 'FILE_SAVED: manifest.json');
-               } //end if-else file saved OK
-             }); //end writeFile manifest.json
-           } else {
-             console.log('Pkpass:[' + req.params['gig_id']
-               + ']' + 'OPENSSL_ERROR: Unable to sha1 ' + names[i] + ' file.');
-           }
-         }); //end calc sha1 for .png files
-       } //end if-names end in .png
-     } //end for-loop
-   }); //end fs.readdir
-
-   //--------------------------------------------------------------------------
-
-
-    //create a .pkpass pass using Openssl and  Certificates.p12, WWDR.pem files
-    //export Certificates.p12 into a different format, passcertificate.pem
-    exec("openssl pkcs12 -in Certificates.p12 -clcerts -nokeys -out passcertificate.pem -passin pass:", {cwd: wrk_dir}, function(err, stdout, stderr){
-      if(!err){
-        var content = stdout;
-        console.log('Pkpass:[' + req.params['gig_id'] + ']' + 'OPENSSL_SUCCESS: Certificates.p12 -> passcertificate.pem');
-
-        //export the key as a separate file, passkey.pem
-        exec("openssl pkcs12 -in Certificates.p12 -nocerts -out passkey.pem -passin pass:-passout pass:12345", {cwd: wrk_dir}, function(err, stdout, stderr){
-          if(!err){
-            var content = stdout;
-            console.log('Pkpass:[' + req.params['gig_id']
-              + ']' + 'OPENSSL_SUCCESS: Certificates.p12 -> passkey.pem');
-
-            //create the signature file.
-            exec("openssl smime -binary -sign -certfile WWDR.pem -signer passcertificate.pem -inkey passkey.pem -in manifest.json -out signature -outform DER -passin pass:12345", {cwd: wrk_dir}, function(err, stdout, stderr){
-              if(!err){
-                var content = stdout;
-                console.log('Pkpass:[' + req.params['gig_id']
-                  + ']' + 'OPENSSL_SUCCESS: Created the signature file.');
-
-                //finally, create the .pkpass zip file, freehugcoupon.pkpass
-                exec("zip -r " + pass_name + " manifest.json pass.json signature logo.pnglogo@2x.png icon.png icon@2x.png strip.png strip@2x.png", {cwd: wrk_dir}, function(err, stdout, stderr){
-                  if(!err){
-                    var content = stdout;
-                    console.log('Pkpass:[' + req.params['gig_id'] + ']' + stdout);
-                    console.log('Pkpass:[' + req.params['gig_id']
-                      + ']' + 'ZIP_SUCCESS: Created the .pkpass file.');
-
-
-                    //check to see if the file exists before allowing it to be downloaded.
-                    fs.exists( wrk_dir + pass_name, function(exists){
-                      if (exists){
-
-                        //you must set the mime type for the content to respond with
-                        //so safari can recognize it.
-                        //does this also work for other mobile browsers?
-                        //e.g. mobile chrome browser on iphone?
-                        res.contentType('application/vnd.apple.pkpass');
-
-                        //DELIVER THE FINAL PRODUCT: the pass !!!
-                        res.download( wrk_dir + pass_name);
-                      } else {
-                        console.log('Pkpass:[' + req.params['gig_id']
-                          + ']' + pass_name + ' does not exist, yet.');
-                      }
-                    });
-                  } else {
-                    console.log('Pkpass:[' + req.params['gig_id'] + ']'
-                      + 'ZIP_ERROR: Could not create the .pkpass file.');
-                  }
-                }); //end zip exec
-              } else {
-                console.log('Pkpass:[' + req.params['gig_id'] + ']'
-                  + 'OPENSSL_ERROR: Could not make signature file.');
-              }
-            });
-          } else {
-            console.log('Pkpass:[' + req.params['gig_id'] + ']'
-              + 'OPENSSL_ERROR: Could not make passkey.pem');
-          }
-        });
-      } else {
-        console.log('Pkpass:[' + req.params['gig_id'] + ']'
-          + 'OPENSSL_ERROR: Could not make passcertificate.pem'+ stderr);
-      }
-    });
-
-    //end experimental section ---------------------
-    */
-
-
-
-
-  return res.send('response from THE_JAMES_CAIRD_application: I tried/set up the bucket');
-
-
-  });
-
-
-
-
-//heholllllooo
-
-
+  //END %%%%%%%%%%% JUNK-STAGING AREA %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
 
 //Heroku: start production server. ssl endpoint is used for https so use standard
 //http server
-
 app.listen(port, function () {
  console.log('HTTP Express server listening on port %d in %s mode', 
    port, app.settings.env);
