@@ -400,11 +400,15 @@ function start_pkpass_generation(req, res, callback) {
                          + "-in manifest.json -out signature -outform "
                          + "DER -passin pass:12345";
 
-    var openssl_stmt_4 = "zip -r " + pass_name 
+    var openssl_stmt_4_1   = "zip -r " + pass_name 
                          + " manifest.json pass.json signature "
                          + "logo.png logo@2x.png icon.png icon@2x.png "
                          + "strip.png strip@2x.png";
 
+    var openssl_stmt_4 = "jar cvf " + pass_name 
+                         + " manifest.json pass.json signature "
+                         + "logo.png logo@2x.png icon.png icon@2x.png "
+                         + "strip.png strip@2x.png";
 
     //--------------------------------------------------------------------------
     //create a .pkpass pass using Openssl and  Certificates.p12, WWDR.pem files
@@ -459,18 +463,22 @@ function start_pkpass_generation(req, res, callback) {
                       }
                     });
                   } else {
+                   
                     console.log('Pkpass:[' + req.query.gig_id + ']'
                       + 'ZIP_ERROR: Could not create the .pkpass file.');
+                    console.log(err);
                   }
                 }); //end zip exec
               } else {
                 console.log('Pkpass:[' + req.query.gig_id + ']'
                   + 'OPENSSL_ERROR: Could not make signature file.');
+                console.log(err);
               }
             });
           } else {
             console.log('Pkpass:[' + req.query.gig_id + ']'
               + 'OPENSSL_ERROR: Could not make passkey.pem');
+            console.log(err);
           }
         });
       } else {
