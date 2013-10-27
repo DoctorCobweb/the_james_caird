@@ -1,7 +1,7 @@
 /*
  *
  *
- * THE_JAME_CAIRD: a little app out in the ocean making mobile tickets
+ * THE_JAMES_CAIRD: a little app out in the ocean making mobile tickets
  * 
  */
 //
@@ -21,7 +21,8 @@ var application_root = __dirname,
 //setup AWS stuff
 AWS.config.update({"accessKeyId": process.env.AWS_ACCESS_KEY_ID,
                    "secretAccessKey": process.env.AWS_SECRET_ACCESS_KEY,
-                   "region": process.env.AWS_REGION});
+                   "region": process.env.AWS_REGION,
+                   "sslEnabled": true});
 
 //console.log(process.env);
 
@@ -55,23 +56,11 @@ app.configure(function () {
   //app.use(express.static(path.join(application_root, 'site_prod')));
 
   //this sets the app to serve development code which is _not_ optimized 
-  app.use(express.static(path.join(application_root, 'site_dev')));
+  //app.use(express.static(path.join(application_root, 'site_dev')));
 
   app.use(express.errorHandler({dumpExceptions: true, showStack: true}));
 });
 
-
-
-//a crude way of implementing the mobile pass route for iphone users
-//app.get('/api/electronic_tickets/pkpass/:gig_id', pass.generate_pass(gig_id));
-//require('./server-routes/pkpass')(mongoose, shackleton_conn, app);
-
-/*
-//a crude way of implementing the mobile pass route for android users
-app.get('/api/electronic_tickets/google_wallet', function (req, res) {
- return res.end('in GET /api/electronic_tickets/google_wallet. not implemented yet!!!');
-});
-*/
 
 
 app.get('/', function (req, res) {
@@ -86,14 +75,7 @@ app.get('/api/apple', function (req, res) {
   console.log('req.query:');
   console.log(req.query); //should have gig and order id sent thru in querystring
 
-  var s3 = new AWS.S3();
-    s3.listBuckets(function(err, data) {
-      for (var index in data.Buckets) {
-        var bucket = data.Buckets[index];
-        console.log("Bucket: ", bucket.Name, ' : ', bucket.CreationDate);
-      }
-  });
-
+  /*
   s3.createBucket({Bucket: process.env.AWS_S3_BUCKET_APPLE}, function (err, data) {
     if (err) {
       console.log(err);
@@ -101,7 +83,7 @@ app.get('/api/apple', function (req, res) {
       console.log(data);
       s3.putObject({
           Bucket: process.env.AWS_S3_BUCKET_APPLE,
-          Key:    'gigs/order/gig_id',
+          Key:    'gig_id',
           Body:   req.query.gig 
         },
         function (err, data) {
@@ -113,6 +95,71 @@ app.get('/api/apple', function (req, res) {
       });
     }
   });
+  */
+
+  //list all the S3 buckets
+  var s3 = new AWS.S3();
+    s3.listBuckets(function(err, data) {
+      console.log('=====> getting the list of all S3 buckets...');
+      for (var index in data.Buckets) {
+        var bucket = data.Buckets[index];
+        console.log("Bucket: ", bucket.Name, ' : ', bucket.CreationDate);
+      }
+  });
+
+
+
+  s3.getObject({
+      Bucket: process.env.AWS_S3_BUCKET_APPLE,
+      'Key': req.query.gig_id + '/pass.json'
+      }
+    , function (err, data) {
+        if (err) {
+          console.log(err); 
+        } if (!data) {
+          console.log('data is null');
+        } else {
+          console.log('=====> got \'pass.json\' object from s3:');
+          console.log(data); //data.Body is of type Buffer
+          var _body = data.Body.toString('utf8');
+          console.log('body of the \'pass.json\' object in s3 is: ' + _body);
+
+          
+          console.log('saving to ephemeral filesystem...');
+          fs.writeFile('pass.json', _body, function (err) {
+            if (err) {
+              console.log(err); 
+            } else {
+              console.log('wrote pass.json to the filesys');
+            }
+          });
+
+        }
+      }
+  );
+
+
+
+
+  /*
+  s3.getObject({
+      Bucket: process.env.AWS_S3_BUCKET_APPLE,
+      'Key': 'gig_id'
+      }
+    , function (err, data) {
+        if (err) {
+          console.log(err); 
+        } else {
+          console.log('=====> got object from s3:');
+          console.log(data);
+          //data.Body is of type Buffer
+          var body = data.Body.toString('utf8');
+          console.log('body of the object in s3 is: '+ body);
+
+        }
+      }
+  );
+  */
 
 
 
