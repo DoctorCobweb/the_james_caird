@@ -126,7 +126,7 @@ app.get('/api/apple', function (req, res) {
 
           
           console.log('saving to ephemeral filesystem...');
-          fs.writeFile('pass.json', _body, function (err) {
+          fs.writeFile($HOME + '/pass.json', _body, function (err) {
             if (err) {
               console.log(err); 
             } else {
