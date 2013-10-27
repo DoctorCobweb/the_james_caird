@@ -24,8 +24,6 @@ AWS.config.update({"accessKeyId": process.env.AWS_ACCESS_KEY_ID,
                    "region": process.env.AWS_REGION,
                    "sslEnabled": true});
 
-//console.log(process.env);
-
 
 //The http server will listen to an appropriate port, or default to
 //port 5001.
@@ -38,7 +36,6 @@ console.log('process.env.PORT: ' + process.env.PORT);
 var app = express();
 
 
-
 //CONFIGURE SERVER:
 app.configure(function () {
   app.use(express.bodyParser());
@@ -47,8 +44,6 @@ app.configure(function () {
   app.use(express.query());
   app.use(express.cookieParser('my secret string'));
   app.use(app.router);
-
-
   //express will use the first static path to foler it encounters. so when site_prod 
   //app.use call is uncommented it will use that & ignore site_dev static folder even 
   //when it is uncommented also (!)
@@ -63,18 +58,22 @@ app.configure(function () {
 
 
 
+
+// ################## ROUTE HANDLER #############################
+
 app.get('/', function (req, res) {
   return res.send('hello there dude');
 });
 
 
 
-//platying around with S3, creating buckets and filling them.
+// ################## ROUTE HANDLER #############################
+
+//create pkpasses for iphone users with iOS 6 +
 app.get('/api/apple', function (req, res) {
   console.log('in the_james_caird app, GET /api/apple handler');
   console.log('req.query:');
   console.log(req.query); //should have gig and order id sent thru in querystring
-
 
   start_pkpass_generation(req, res, function (err) {
     if (err) {
@@ -85,10 +84,6 @@ app.get('/api/apple', function (req, res) {
 });
 
 
-
-
-
-//TODO: fix pkpass error, clean up tmp dir after success, refactor pkpass generation
 //create a tmp dir. check if it already exists, if so then try another rand number
 //nav into the tmp dir
 //download all the contents of the S3 bucket pertaining to the gig
@@ -99,7 +94,6 @@ app.get('/api/apple', function (req, res) {
 //
 //could u start the pkpass process from initialize() clientside and just return the 
 //final url for downloading the pkpass to the button to call if pressed.
-
 function start_pkpass_generation(req, res, callback) {
   var s3 = new AWS.S3();
   var random_int; 
@@ -258,10 +252,12 @@ function start_pkpass_generation(req, res, callback) {
       //TODO: ERROR HANDLUNG
       //WAY 2: using pipes. this works but there's no ERRROR HANDLING!!!!!
       //console.log(path_for_the_file);
+      //createReadStream(): the data read from the stream only contains the raw HTTP
+      //_body_ contents.
       var file = fs.createWriteStream(path_for_the_file); 
       s3.getObject(params).createReadStream().pipe(file);
 
-    }
+    } //end for loop
 
 
     console.log('looking into the new dir for files...');
@@ -276,30 +272,44 @@ function start_pkpass_generation(req, res, callback) {
 
     });
 
+
+
+    var wrk_dir_0 ='./tmp' + random_int + '/';
+ 
+    //############## HACK ######################
     //got the files, now make the pkpass
-    make_the_pkpass();
+    //make_the_pkpass();
+    //if we wait for the files to download before moving on we get successful openssl
+    //operation i.e. the pkpass is successfully generated.
+    console.log('waiting 2000ms.......');
+    setTimeout(make_the_pkpass, 2000);
+
 
   }
 
+
   function make_the_pkpass() {
-
-
-
-    //START EXPERIMENTAL SECTION ---------------------
+    console.log('in make_the_pkpass()');
 
     var manifest_content = {};
     var pass_name = 'testler' + '.pkpass';
-
     //the directory relative to shackelton/ to execute commands.
     //will/should be different for different pkpasses but for now its
     //hardcoded during demoing stage
     //var wrk_dir = process.env.PWD + '/tmp' + random_int + '/';
 
 
-    //**********************************
     //ERRORS occur when using the tmpxxxx dir. but everything works when you use a prior
     //made dir (even with the Certificates.p12 and WWDR.pem copied from a previous S3 
     //download => it is not the certs authenticity).
+    //ANSWER: it is because of the async nature of nodejs: it races though the function
+    //call chain and tries to use Certificates.p12 (and all the other files it's trying
+    //to download for that matter) before they are completely downloaded!
+    //hacky fix is currently using setTimeout for 2000ms.
+    //but a better fix would be to listen to data and end events for the streams.
+    //if u keep with using the setTmeout hack, then what happens if the downloading takes
+    //more than the timout intervel? you will go on to use incomplete files (not really
+    //fixing the issue are you!).
     var wrk_dir ='./tmp' + random_int + '/';
     //var wrk_dir ='./a_debugging_pkpass/';
 
@@ -332,75 +342,98 @@ function start_pkpass_generation(req, res, callback) {
         + ']' + 'The current directory contains image files:');
 
 
-     for(var i = 0; i < names.length; i++) {
-       if (names[i].indexOf('.png') >= 0){
-         console.log('Pkpass:[' + req.query.gig_id + ']' + names[i]);
-         exec('openssl sha1 ' + names[i], {cwd: wrk_dir}, function(err, stdout, stderr){
-           if(!err){
-             //console.log('stdout: ' + stdout);
-             //console.log('names: ' + names[i]);
+      for(var i = 0; i < names.length; i++) {
+        if (names[i].indexOf('.png') >= 0){
+          console.log('Pkpass:[' + req.query.gig_id + ']' + names[i]);
+          exec('openssl sha1 ' + names[i], {cwd: wrk_dir}, function(err, stdout, stderr){
 
-             var content = stdout;
-             var start_index_of_hash = content.indexOf('=') + 2
-             var left_brace = content.indexOf('(');
-             var right_brace = content.indexOf(')');
-
-
-             //also, strip the newline character from end of hash.
-             var hash = content.substring(start_index_of_hash, content.length - 1);
-             var file_name = content.substring(left_brace + 1, right_brace);
-
-
-             //put the (file_name, hash) pair into the manifest_content obj.
-             manifest_content[file_name] = hash;
-
-             console.log('Pkpass:[' + req.query.gig_id + ']'
-               + 'manifest_content.' + file_name + '=' + manifest_content[file_name]);
-
-
-             fs.writeFile( wrk_dir + 'manifest.json', JSON.stringify(manifest_content),
-               function(err){
-                     if (err) {
-                       throw err;
-                     } else {
-                       console.log('Pkpass:[' + req.query.gig_id
-                         + ']' + 'FILE_SAVED: manifest.json');
-               } //end if-else file saved OK
-             }); //end writeFile manifest.json
-           } else {
-             console.log('Pkpass:[' + req.query.gig_id
-               + ']' + 'OPENSSL_ERROR: Unable to sha1 ' + names[i] + ' file.');
-           }
-         }); //end calc sha1 for .png files
-       } //end if-names end in .png
-     } //end for-loop
-   }); //end fs.readdir
-
-   //--------------------------------------------------------------------------
+            if(!err) {
+              //console.log('stdout: ' + stdout);
+              //console.log('names: ' + names[i]);
+ 
+              var content = stdout;
+              var start_index_of_hash = content.indexOf('=') + 2
+              var left_brace = content.indexOf('(');
+              var right_brace = content.indexOf(')');
+ 
+              //also, strip the newline character from end of hash.
+              var hash = content.substring(start_index_of_hash, content.length - 1);
+              var file_name = content.substring(left_brace + 1, right_brace);
+ 
+              //put the (file_name, hash) pair into the manifest_content obj.
+              manifest_content[file_name] = hash;
+ 
+              console.log('Pkpass:[' + req.query.gig_id + ']'
+                + 'manifest_content.' + file_name + '=' + manifest_content[file_name]);
+ 
+              fs.writeFile( wrk_dir + 'manifest.json', JSON.stringify(manifest_content),
+                function(err){
+                  if (err) {
+                    throw err;
+                  } else {
+                    console.log('Pkpass:[' + req.query.gig_id
+                      + ']' + 'FILE_SAVED: manifest.json');
+                  } 
+                }
+              ); 
+            } else {
+              console.log('Pkpass:[' + req.query.gig_id
+                + ']' + 'OPENSSL_ERROR: Unable to sha1 ' + names[i] + ' file.');
+            }
+          }); //end calc sha1 for .png files
+        } //end if-names end in .png
+      } //end for-loop
+    }); //end fs.readdir
 
 
+
+    //statements used in the pkpass openssl chain
+    var openssl_stmt_1 = "openssl pkcs12 -in Certificates.p12 " 
+                         + "-clcerts -nokeys -out passcertificate.pem -passin pass:";
+
+    var openssl_stmt_2 =  "openssl pkcs12 -in Certificates.p12 "
+                          + "-nocerts -out passkey.pem -passin "
+                          + "pass: -passout pass:12345";
+
+    var openssl_stmt_3 = "openssl smime -binary -sign -certfile WWDR.pem "
+                         + "-signer passcertificate.pem -inkey passkey.pem "
+                         + "-in manifest.json -out signature -outform "
+                         + "DER -passin pass:12345";
+
+    var openssl_stmt_4 = "zip -r " + pass_name 
+                         + " manifest.json pass.json signature "
+                         + "logo.png logo@2x.png icon.png icon@2x.png "
+                         + "strip.png strip@2x.png";
+
+
+    //--------------------------------------------------------------------------
     //create a .pkpass pass using Openssl and  Certificates.p12, WWDR.pem files
     //export Certificates.p12 into a different format, passcertificate.pem
-    exec("openssl pkcs12 -in Certificates.p12 -clcerts -nokeys -out passcertificate.pem -passin pass:", {cwd: wrk_dir}, function(err, stdout, stderr){
+    exec(openssl_stmt_1 , {cwd: wrk_dir}, function(err, stdout, stderr){
       if(!err){
         var content = stdout;
-        console.log('Pkpass:[' + req.query.gig_id + ']' + 'OPENSSL_SUCCESS: Certificates.p12 -> passcertificate.pem');
+        console.log('Pkpass:[' + req.query.gig_id + ']' 
+                    + 'OPENSSL_SUCCESS: Certificates.p12 -> passcertificate.pem');
+
 
         //export the key as a separate file, passkey.pem
-        exec("openssl pkcs12 -in Certificates.p12 -nocerts -out passkey.pem -passin pass: -passout pass:12345", {cwd: wrk_dir}, function(err, stdout, stderr){
+        exec(openssl_stmt_2, {cwd: wrk_dir}, function(err, stdout, stderr){
           if(!err){
             var content = stdout;
-            console.log('Pkpass:[' + req.query.gig_id + ']' + 'OPENSSL_SUCCESS: Certificates.p12 -> passkey.pem');
+            console.log('Pkpass:[' + req.query.gig_id + ']' 
+                        + 'OPENSSL_SUCCESS: Certificates.p12 -> passkey.pem');
+
 
             //create the signature file.
-            exec("openssl smime -binary -sign -certfile WWDR.pem -signer passcertificate.pem -inkey passkey.pem -in manifest.json -out signature -outform DER -passin pass:12345", {cwd: wrk_dir}, function(err, stdout, stderr){
+            exec(openssl_stmt_3, {cwd: wrk_dir}, function(err, stdout, stderr){
               if(!err){
                 var content = stdout;
                 console.log('Pkpass:[' + req.query.gig_id
                   + ']' + 'OPENSSL_SUCCESS: Created the signature file.');
 
+
                 //finally, create the .pkpass zip file, freehugcoupon.pkpass
-                exec("zip -r " + pass_name + " manifest.json pass.json signature logo.png logo@2x.png icon.png icon@2x.png strip.png strip@2x.png", {cwd: wrk_dir}, function(err, stdout, stderr){
+                exec(openssl_stmt_4, {cwd: wrk_dir}, function(err, stdout, stderr){
                   if(!err){
                     var content = stdout;
                     console.log('Pkpass:[' + req.query.gig_id + ']' + stdout);
@@ -408,7 +441,7 @@ function start_pkpass_generation(req, res, callback) {
                       + ']' + 'ZIP_SUCCESS: Created the .pkpass file.');
 
 
-                    //check to see if the file exists before allowing it to be downloaded.
+                    //check to see if the file exists before downloading.
                     fs.exists( wrk_dir + pass_name, function(exists){
                       if (exists){
 
@@ -444,38 +477,23 @@ function start_pkpass_generation(req, res, callback) {
         console.log('Pkpass:[' + req.query.gig_id + ']'
           + 'OPENSSL_ERROR: Could not make passcertificate.pem'+ stderr);
       }
-    });
 
-    //END EXPERIMENTAL SECTION ---------------------
+    }); //end exec('openssl ......stuff')
 
-  }
-
+  } //end make_the_pkpass()
 
 
-  //start the function call process
+
+
+  //start the function call chain
   create_tmp_dir();
 
-
-} //end start_pkpass_generation()
-
+} //end start_pkpass_generation function
 
 
 
-  
-
-
-
-
-
-
-
-
-
-
-
-  //START %%%%%%%%%%% JUNK-STAGING AREA %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-  /*
+//START %%%%%%%%%%% JUNK-STAGING AREA %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+/*
   s3.createBucket({Bucket: process.env.AWS_S3_BUCKET_APPLE}, function (err, data) {
     if (err) {
       console.log(err);
@@ -495,28 +513,24 @@ function start_pkpass_generation(req, res, callback) {
       });
     }
   });
-  */
 
 
-  /*
   //list all the S3 buckets
-    s3.listBuckets(function(err, data) {
-      console.log('=====> getting the list of all S3 buckets...');
-      for (var index in data.Buckets) {
-        var bucket = data.Buckets[index];
-        console.log("Bucket: ", bucket.Name, ' : ', bucket.CreationDate);
-      }
-  });
-  */
+  s3.listBuckets(function(err, data) {
+    console.log('=====> getting the list of all S3 buckets...');
+    for (var index in data.Buckets) {
+      var bucket = data.Buckets[index];
+      console.log("Bucket: ", bucket.Name, ' : ', bucket.CreationDate);
+    }
+});
+*/
+//END %%%%%%%%%%% JUNK-STAGING AREA %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
 
-  //END %%%%%%%%%%% JUNK-STAGING AREA %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-
-//Heroku: start production server. ssl endpoint is used for https so use standard
-//http server
+//start the actual http server
 app.listen(port, function () {
  console.log('HTTP Express server listening on port %d in %s mode', 
    port, app.settings.env);
