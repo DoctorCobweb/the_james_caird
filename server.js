@@ -126,11 +126,22 @@ app.get('/api/apple', function (req, res) {
 
           
           console.log('saving to ephemeral filesystem...');
-          fs.writeFile($HOME + '/pass.json', _body, function (err) {
+          fs.writeFile('pass.json', _body, function (err) {
             if (err) {
               console.log(err); 
             } else {
               console.log('wrote pass.json to the filesys');
+              console.log('reading the dir...');
+              fs.readdir('.', function (err, files) {
+                if (err) {
+                  console.log(err);
+                } else {
+                  for (var i in files) {
+                    console.log('files[' + i + ']' + files[i]);
+                  }
+                }
+              });
+              
             }
           });
 
