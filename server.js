@@ -424,15 +424,15 @@ function start_pkpass_generation(req, res, callback) {
                          + "-in manifest.json -out signature -outform "
                          + "DER -passin pass:12345";
 
-    var openssl_stmt_4_dev   = "zip -r " + pass_name 
-                         + " manifest.json pass.json signature "
-                         + "logo.png logo@2x.png icon.png icon@2x.png "
-                         + "strip.png strip@2x.png";
-
     var openssl_stmt_4   = "jar cvf " + pass_name 
                          + " manifest.json pass.json signature "
                          + "logo.png logo@2x.png icon.png icon@2x.png "
                          + "strip.png strip@2x.png";
+
+    //var openssl_stmt_4_dev   = "zip -r " + pass_name 
+    //                     + " manifest.json pass.json signature "
+    //                     + "logo.png logo@2x.png icon.png icon@2x.png "
+    //                     + "strip.png strip@2x.png";
 
     //--------------------------------------------------------------------------
     //create a .pkpass pass using Openssl and  Certificates.p12, WWDR.pem files
@@ -495,18 +495,32 @@ function start_pkpass_generation(req, res, callback) {
                             } else {
                               console.log('data from s3.putObject callback');
                               console.log(data);
+
+
+                              var params = {
+                                Bucket: process.env.AWS_S3_BUCKET_APPLE, 
+                                Key: req.query.gig_id + '/final_pkpasses/' + 
+                                     req.query.order_id + '.pkpass' 
+                              };
+                              var url = s3.getSignedUrl('getObject', params);
+                              console.log('The URL is', url);
+                              res.send(url);
+
+
+                              //you must set the mime type for the content to respond with
+                              //so safari can recognize it.
+                              //does this also work for other mobile browsers?
+                              //e.g. mobile chrome browser on iphone?
+                              //res.contentType('application/vnd.apple.pkpass');
+
+                              //DELIVER THE FINAL PRODUCT: the pass !!!
+                              //res.download( WRK_DIR + pass_name);
+
+
                             }
                           }
                         );
 
-                        //you must set the mime type for the content to respond with
-                        //so safari can recognize it.
-                        //does this also work for other mobile browsers?
-                        //e.g. mobile chrome browser on iphone?
-                        res.contentType('application/vnd.apple.pkpass');
-
-                        //DELIVER THE FINAL PRODUCT: the pass !!!
-                        res.download( WRK_DIR + pass_name);
                       } else {
                         console.log(req.query.order_id + '.pkpass: ' 
                                     + pass_name + ' does not exist, yet.');
