@@ -293,10 +293,6 @@ function start_pkpass_generation(req, res, callback) {
 
     var manifest_content = {};
     var pass_name = 'testler' + '.pkpass';
-    //the directory relative to shackelton/ to execute commands.
-    //will/should be different for different pkpasses but for now its
-    //hardcoded during demoing stage
-    //var wrk_dir = process.env.PWD + '/tmp' + random_int + '/';
 
 
     //ERRORS occur when using the tmpxxxx dir. but everything works when you use a prior
@@ -400,12 +396,12 @@ function start_pkpass_generation(req, res, callback) {
                          + "-in manifest.json -out signature -outform "
                          + "DER -passin pass:12345";
 
-    var openssl_stmt_4_1   = "zip -r " + pass_name 
+    var openssl_stmt_4   = "zip -r " + pass_name 
                          + " manifest.json pass.json signature "
                          + "logo.png logo@2x.png icon.png icon@2x.png "
                          + "strip.png strip@2x.png";
 
-    var openssl_stmt_4 = "jar cvf " + pass_name 
+    var openssl_stmt_4_prod = "jar cvf " + pass_name 
                          + " manifest.json pass.json signature "
                          + "logo.png logo@2x.png icon.png icon@2x.png "
                          + "strip.png strip@2x.png";
@@ -445,9 +441,32 @@ function start_pkpass_generation(req, res, callback) {
                       + ']' + 'ZIP_SUCCESS: Created the .pkpass file.');
 
 
+                    //TODO
+                    //dont use exists. see nodejs docs -> leads to race conditions
                     //check to see if the file exists before downloading.
                     fs.exists( wrk_dir + pass_name, function(exists){
                       if (exists){
+
+                        var key_url = req.query.gig_id + '/final_pkpasses/' 
+                                                  + req.query.order_id
+                                                  + '.pkpass';
+                        console.log('key_url: ' + key_url);
+
+                        //upload the pkpass to S3 since it is finished and exists
+                        s3.putObject({
+                            Bucket: process.env.AWS_S3_BUCKET_APPLE,
+                            Key: key_url,
+                            Body: fs.createReadStream(wrk_dir + pass_name)
+                          }, 
+                          function (err, data) {
+                            if(err) {
+                              return callback(err);
+                            } else {
+                              console.log('data from s3.putObject callback');
+                              console.log(data);
+                            }
+                          }
+                        );
 
                         //you must set the mime type for the content to respond with
                         //so safari can recognize it.
