@@ -396,12 +396,12 @@ function start_pkpass_generation(req, res, callback) {
                          + "-in manifest.json -out signature -outform "
                          + "DER -passin pass:12345";
 
-    var openssl_stmt_4   = "zip -r " + pass_name 
+    var openssl_stmt_4_dev   = "zip -r " + pass_name 
                          + " manifest.json pass.json signature "
                          + "logo.png logo@2x.png icon.png icon@2x.png "
                          + "strip.png strip@2x.png";
 
-    var openssl_stmt_4_prod = "jar cvf " + pass_name 
+    var openssl_stmt_4   = "jar cvf " + pass_name 
                          + " manifest.json pass.json signature "
                          + "logo.png logo@2x.png icon.png icon@2x.png "
                          + "strip.png strip@2x.png";
