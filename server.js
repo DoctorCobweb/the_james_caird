@@ -100,6 +100,8 @@ function start_pkpass_generation(req, res, callback) {
   var MIN_RAND = 1000;
   var MAX_RAND = 9999;
   var extracted_keys = []; //array of items for download from s3 for gig
+  var pass_name = 'testler' + '.pkpass';
+  var WRK_DIR;
 
 
   //Returns a random integer between min and max
@@ -112,19 +114,22 @@ function start_pkpass_generation(req, res, callback) {
   function create_tmp_dir() {
     random_int = get_random_int(MIN_RAND, MAX_RAND);
 
+    WRK_DIR = process.env.PWD + '/tmp' + random_int + '/';
+
     //check if the tmp dir already exists. if it does, another user is currently
     //generating their pkpass and you dont want to overwrite their pkpass details
     //method: try to read the dir. if err is non null in callback then the dir exists.
     //we want to have an err null which means the dir does _not_ exist.
-    fs.readdir(process.env.PWD + '/tmp' + random_int, function (err, files) {
+    //fs.readdir(process.env.PWD + '/tmp' + random_int, function (err, files) {
+    fs.readdir(WRK_DIR, function (err, files) {
       if (err) {
         //dir does not exist, cool. go onto the next step
-        console.log('/tmp' + random_int + ' does not exist. GOOD');
+        console.log(WRK_DIR + ' does not exist. GOOD');
    
         make_the_tmp_dir();
       } else {
         //dir does exist
-        console.log('/tmp' + random_int + ' does exist. BAD, try another dir');
+        console.log(WRK_DIR + ' does exist. BAD, try another dir');
 
         //call this function again which will create a new random_int to use
         create_tmp_dir();
@@ -135,12 +140,12 @@ function start_pkpass_generation(req, res, callback) {
 
   function make_the_tmp_dir() {
 
-    fs.mkdir(process.env.PWD + '/tmp' + random_int, function (err) {
+    fs.mkdir(WRK_DIR, function (err) {
       if (err) {
         console.log(err); 
         return callback(err);
       } else {
-        console.log('making ' + process.env.PWD + '/tmp' + random_int + ' dir');
+        console.log('making ' + WRK_DIR + '  dir');
   
         //now get the list of all the files from S3 for the gig in question
         get_the_list_of_files_from_s3();
@@ -215,8 +220,7 @@ function start_pkpass_generation(req, res, callback) {
       
       };
 
-      var path_for_the_file = process.env.PWD + '/tmp' + random_int 
-                                  + '/' + extracted_keys[k];
+      var path_for_the_file = WRK_DIR + extracted_keys[k];
 
 
       //WAY 1: verbose way...doesnt work because of async calls. for loop is finished
@@ -230,8 +234,7 @@ function start_pkpass_generation(req, res, callback) {
             //data.Body is of type Buffer
             console.log('GOT A OBJECT FROM S3....');
             console.log(data);
-            var path_for_the_file_1 = process.env.PWD + '/tmp' + random_int 
-                                  + '/' + extracted_keys[k];
+            var path_for_the_file_1 = WRK_DIR + extracted_keys[k];
 
             console.log('path_for_the_file_1' + path_for_the_file_1);
             fs.writeFile(path_for_the_file_1, data.Body, function (err) {
@@ -274,8 +277,6 @@ function start_pkpass_generation(req, res, callback) {
 
 
 
-    var wrk_dir_0 ='./tmp' + random_int + '/';
- 
     //############## HACK ######################
     //got the files, now make the pkpass
     //make_the_pkpass();
@@ -292,7 +293,7 @@ function start_pkpass_generation(req, res, callback) {
     console.log('in make_the_pkpass()');
 
     var manifest_content = {};
-    var pass_name = 'testler' + '.pkpass';
+    var PKPASS_NUMBER_OF_PNG_FILES = 6;
 
 
     //ERRORS occur when using the tmpxxxx dir. but everything works when you use a prior
@@ -306,7 +307,7 @@ function start_pkpass_generation(req, res, callback) {
     //if u keep with using the setTmeout hack, then what happens if the downloading takes
     //more than the timout intervel? you will go on to use incomplete files (not really
     //fixing the issue are you!).
-    var wrk_dir ='./tmp' + random_int + '/';
+    //var wrk_dir ='./tmp' + random_int + '/';
     //var wrk_dir ='./a_debugging_pkpass/';
 
 
@@ -315,12 +316,13 @@ function start_pkpass_generation(req, res, callback) {
     //and the .pkpass routines finish before that? incomplete manifest.json
     //file -> invalid pass! callback embedding of these 2 procedures..?
     //create the manifest.json file programatically
-    fs.readdir(wrk_dir, function(err, names){
+    fs.readdir(WRK_DIR, function(err, names){
 
       //compute hash of pass.json file
-      exec('openssl sha1 pass.json', {cwd: wrk_dir}, function(err, stdout, stderr){
+      console.log('computing the sha1 hash of pass.json...');
+      exec('openssl sha1 pass.json', {cwd: WRK_DIR}, function(err, stdout, stderr){
         if(!err) {
-          console.log('hello from pass.json sha1 block');
+          console.log('computed the sha1 hash of pass.json');
 
           var content = stdout;
           var start_index_of_hash = content.indexOf('=') + 2
@@ -329,19 +331,26 @@ function start_pkpass_generation(req, res, callback) {
           //put the (pass.json, hash) pair into the manifest_content object
           manifest_content["pass.json"] = hash;
         } else {
-          console.log('Pkpass:[' + req.query.gig_id 
-            + ']' + 'OPENSSL_ERROR: Unable to sha1 pass.json file.' + err);
+          console.log(req.query.order_id + '.pkpass: '
+                      + 'OPENSSL_ERROR: Unable to sha1 pass.json file.' + err);
         }
       });
 
-      console.log('Pkpass:[' + req.query.gig_id
-        + ']' + 'The current directory contains image files:');
+      console.log(req.query.order_id + '.pkpass: ' 
+                  + 'The current directory contains image files:');
 
 
       for(var i = 0; i < names.length; i++) {
-        if (names[i].indexOf('.png') >= 0){
-          console.log('Pkpass:[' + req.query.gig_id + ']' + names[i]);
-          exec('openssl sha1 ' + names[i], {cwd: wrk_dir}, function(err, stdout, stderr){
+        if (names[i].indexOf('.png') >= 0) {
+          console.log(req.query.order_id + '.pkpass: ' +  names[i]);
+
+          //used to call next step, openssl_step(), AFTER, the for-loop has gone through
+          //and found all .png files.
+          //a way to handle async callbacks happen waaayyyy later than the for-loop
+          //finishing.
+          var count = 0;
+
+          exec('openssl sha1 ' + names[i], {cwd: WRK_DIR}, function(err, stdout, stderr){
 
             if(!err) {
               //console.log('stdout: ' + stdout);
@@ -359,28 +368,47 @@ function start_pkpass_generation(req, res, callback) {
               //put the (file_name, hash) pair into the manifest_content obj.
               manifest_content[file_name] = hash;
  
-              console.log('Pkpass:[' + req.query.gig_id + ']'
-                + 'manifest_content.' + file_name + '=' + manifest_content[file_name]);
+              console.log(req.query.order_id + '.pkpass' 
+                + ' manifest_content.' + file_name + '=' + manifest_content[file_name]);
  
-              fs.writeFile( wrk_dir + 'manifest.json', JSON.stringify(manifest_content),
+              fs.writeFile( WRK_DIR + 'manifest.json', JSON.stringify(manifest_content),
                 function(err){
                   if (err) {
                     throw err;
                   } else {
                     console.log('Pkpass:[' + req.query.gig_id
                       + ']' + 'FILE_SAVED: manifest.json');
+
+                    
+                    
+                    count++;
+                    console.log('count: ' + count);
+                    if (count === PKPASS_NUMBER_OF_PNG_FILES) {
+                      //we have written all the .png files to disk, now we can go to 
+                      //next step
+                      openssl_step();
+                    }
+
                   } 
                 }
               ); 
             } else {
-              console.log('Pkpass:[' + req.query.gig_id
-                + ']' + 'OPENSSL_ERROR: Unable to sha1 ' + names[i] + ' file.');
+              console.log(req.query.order_id + '.pkpass: ' 
+                          + 'OPENSSL_ERROR: Unable to sha1 ' + names[i] + ' file.');
             }
           }); //end calc sha1 for .png files
         } //end if-names end in .png
       } //end for-loop
     }); //end fs.readdir
 
+
+
+
+  } //end make_the_pkpass()
+
+
+  function openssl_step() {
+    console.log('in openssl_step()');
 
 
     //statements used in the pkpass openssl chain
@@ -409,54 +437,57 @@ function start_pkpass_generation(req, res, callback) {
     //--------------------------------------------------------------------------
     //create a .pkpass pass using Openssl and  Certificates.p12, WWDR.pem files
     //export Certificates.p12 into a different format, passcertificate.pem
-    exec(openssl_stmt_1 , {cwd: wrk_dir}, function(err, stdout, stderr){
+    exec(openssl_stmt_1 , {cwd: WRK_DIR}, function(err, stdout, stderr){
       if(!err){
         var content = stdout;
-        console.log('Pkpass:[' + req.query.gig_id + ']' 
+        console.log(req.query.order_id + '.pkpass: ' 
                     + 'OPENSSL_SUCCESS: Certificates.p12 -> passcertificate.pem');
 
 
         //export the key as a separate file, passkey.pem
-        exec(openssl_stmt_2, {cwd: wrk_dir}, function(err, stdout, stderr){
+        exec(openssl_stmt_2, {cwd: WRK_DIR}, function(err, stdout, stderr){
           if(!err){
             var content = stdout;
-            console.log('Pkpass:[' + req.query.gig_id + ']' 
+            console.log(req.query.order_id + '.pkpass: '
                         + 'OPENSSL_SUCCESS: Certificates.p12 -> passkey.pem');
 
 
             //create the signature file.
-            exec(openssl_stmt_3, {cwd: wrk_dir}, function(err, stdout, stderr){
+            exec(openssl_stmt_3, {cwd: WRK_DIR}, function(err, stdout, stderr){
               if(!err){
                 var content = stdout;
-                console.log('Pkpass:[' + req.query.gig_id
-                  + ']' + 'OPENSSL_SUCCESS: Created the signature file.');
+                console.log(req.query.order_id + '.pkpass: '
+                            + 'OPENSSL_SUCCESS: Created the signature file.');
 
 
                 //finally, create the .pkpass zip file, freehugcoupon.pkpass
-                exec(openssl_stmt_4, {cwd: wrk_dir}, function(err, stdout, stderr){
+                exec(openssl_stmt_4, {cwd: WRK_DIR}, function(err, stdout, stderr){
                   if(!err){
                     var content = stdout;
-                    console.log('Pkpass:[' + req.query.gig_id + ']' + stdout);
-                    console.log('Pkpass:[' + req.query.gig_id
-                      + ']' + 'ZIP_SUCCESS: Created the .pkpass file.');
+                    console.log(req.query.order_id + '.pkpass: ' + stdout);
+                    console.log(req.query.order_id + '.pkpass: '
+                      + 'ZIP_SUCCESS: Created the .pkpass file.');
 
 
                     //TODO
                     //dont use exists. see nodejs docs -> leads to race conditions
                     //check to see if the file exists before downloading.
-                    fs.exists( wrk_dir + pass_name, function(exists){
+                    fs.exists( WRK_DIR + pass_name, function(exists){
                       if (exists){
 
                         var key_url = req.query.gig_id + '/final_pkpasses/' 
                                                   + req.query.order_id
                                                   + '.pkpass';
                         console.log('key_url: ' + key_url);
+                        console.log('putting ' + req.query.order_id 
+                                    + '.pkpass into S3......');
+                                    
 
                         //upload the pkpass to S3 since it is finished and exists
                         s3.putObject({
                             Bucket: process.env.AWS_S3_BUCKET_APPLE,
                             Key: key_url,
-                            Body: fs.createReadStream(wrk_dir + pass_name)
+                            Body: fs.createReadStream(WRK_DIR + pass_name)
                           }, 
                           function (err, data) {
                             if(err) {
@@ -475,39 +506,40 @@ function start_pkpass_generation(req, res, callback) {
                         res.contentType('application/vnd.apple.pkpass');
 
                         //DELIVER THE FINAL PRODUCT: the pass !!!
-                        res.download( wrk_dir + pass_name);
+                        res.download( WRK_DIR + pass_name);
                       } else {
-                        console.log('Pkpass:[' + req.query.gig_id
-                          + ']' + pass_name + ' does not exist, yet.');
+                        console.log(req.query.order_id + '.pkpass: ' 
+                                    + pass_name + ' does not exist, yet.');
                       }
                     });
                   } else {
                    
-                    console.log('Pkpass:[' + req.query.gig_id + ']'
-                      + 'ZIP_ERROR: Could not create the .pkpass file.');
+                    console.log(req.query.order_id + '.pkpass: '
+                                + 'ZIP_ERROR: Could not create the .pkpass file.');
                     console.log(err);
                   }
                 }); //end zip exec
               } else {
-                console.log('Pkpass:[' + req.query.gig_id + ']'
-                  + 'OPENSSL_ERROR: Could not make signature file.');
+                console.log(req.query.order_id + '.pkpass: ' 
+                            + 'OPENSSL_ERROR: Could not make signature file.');
                 console.log(err);
               }
             });
           } else {
-            console.log('Pkpass:[' + req.query.gig_id + ']'
-              + 'OPENSSL_ERROR: Could not make passkey.pem');
+            console.log(req.query.order_id + '.pkpass: '
+                        + 'OPENSSL_ERROR: Could not make passkey.pem');
             console.log(err);
           }
         });
       } else {
-        console.log('Pkpass:[' + req.query.gig_id + ']'
+        console.log(req.query.order_id + '.pkpass: '
           + 'OPENSSL_ERROR: Could not make passcertificate.pem'+ stderr);
       }
 
     }); //end exec('openssl ......stuff')
 
-  } //end make_the_pkpass()
+
+  } //openssl_step()
 
 
 
