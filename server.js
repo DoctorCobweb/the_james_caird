@@ -504,22 +504,27 @@ function start_pkpass_generation(req, res, callback) {
                               };
                               var url = s3.getSignedUrl('getObject', params);
                               console.log('The URL is', url);
-                              res.send(url);
-
-
-                              //you must set the mime type for the content to respond with
-                              //so safari can recognize it.
-                              //does this also work for other mobile browsers?
-                              //e.g. mobile chrome browser on iphone?
-                              //res.contentType('application/vnd.apple.pkpass');
-
-                              //DELIVER THE FINAL PRODUCT: the pass !!!
-                              //res.download( WRK_DIR + pass_name);
-
+                              //res.send(url);
+                              //res.send(new Buffer(url));
 
                             }
                           }
                         );
+
+
+                        console.log('WRK_DIR + pass_name: ' + WRK_DIR + pass_name);
+                        res.contentType('application/vnd.apple.pkpass');
+                        res.sendfile(WRK_DIR + pass_name);
+
+
+                        //you must set the mime type for the content to respond with
+                        //so safari can recognize it.
+                        //does this also work for other mobile browsers?
+                        //e.g. mobile chrome browser on iphone?
+                        //res.contentType('application/vnd.apple.pkpass');
+
+                        //DELIVER THE FINAL PRODUCT: the pass !!!
+                        //res.download( WRK_DIR + pass_name);
 
                       } else {
                         console.log(req.query.order_id + '.pkpass: ' 
