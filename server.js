@@ -512,8 +512,13 @@ function start_pkpass_generation(req, res, callback) {
                         );
 
 
+                        //we return the .pkpass file make on the emphemeral fs. NOT the
+                        //aws saved version of it.
                         console.log('WRK_DIR + pass_name: ' + WRK_DIR + pass_name);
-                        res.contentType('application/vnd.apple.pkpass');
+                    
+
+                        //no need to set the header here, do it from shackleton app
+                        //res.contentType('application/vnd.apple.pkpass');
                         res.sendfile(WRK_DIR + pass_name);
 
 
