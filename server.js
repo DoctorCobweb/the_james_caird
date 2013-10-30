@@ -503,7 +503,7 @@ function start_pkpass_generation(req, res, callback) {
                                      req.query.order_id + '.pkpass' 
                               };
                               var url = s3.getSignedUrl('getObject', params);
-                              console.log('The URL is', url);
+                              console.log('Got an AWS signed url', url);
                               //res.send(url);
                               //res.send(new Buffer(url));
 
