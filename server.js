@@ -479,37 +479,6 @@ function start_pkpass_generation(req, res, callback) {
                                                   + req.query.order_id
                                                   + '.pkpass';
                         console.log('key_url: ' + key_url);
-                        console.log('putting ' + req.query.order_id 
-                                    + '.pkpass into S3......');
-                                    
-
-                        //upload the pkpass to S3 since it is finished and exists
-                        s3.putObject({
-                            Bucket: process.env.AWS_S3_BUCKET_APPLE,
-                            Key: key_url,
-                            Body: fs.createReadStream(WRK_DIR + pass_name)
-                          }, 
-                          function (err, data) {
-                            if(err) {
-                              return callback(err);
-                            } else {
-                              console.log('data from s3.putObject callback');
-                              console.log(data);
-
-
-                              var params = {
-                                Bucket: process.env.AWS_S3_BUCKET_APPLE, 
-                                Key: req.query.gig_id + '/final_pkpasses/' + 
-                                     req.query.order_id + '.pkpass' 
-                              };
-                              var url = s3.getSignedUrl('getObject', params);
-                              console.log('Got an AWS signed url', url);
-                              //res.send(url);
-                              //res.send(new Buffer(url));
-
-                            }
-                          }
-                        );
 
 
                         //we return the .pkpass file make on the emphemeral fs. NOT the
@@ -519,7 +488,58 @@ function start_pkpass_generation(req, res, callback) {
 
                         //no need to set the header here, do it from shackleton app
                         //res.contentType('application/vnd.apple.pkpass');
-                        res.sendfile(WRK_DIR + pass_name);
+                        res.sendfile(WRK_DIR + pass_name, function (err) {
+                          if (err) {
+                            return callback(err);
+                          } else {
+                            console.log('putting ' + req.query.order_id 
+                                        + '.pkpass into S3......');
+                                        
+    
+                            //upload the pkpass to S3 since it is finished and exists
+                            s3.putObject({
+                                Bucket: process.env.AWS_S3_BUCKET_APPLE,
+                                Key: key_url,
+                                Body: fs.createReadStream(WRK_DIR + pass_name)
+                              }, 
+                              function (err, data) {
+                                if(err) {
+                                  return callback(err);
+                                } else {
+                                  console.log('data from s3.putObject callback');
+                                  console.log(data);
+    
+    
+                                  var params = {
+                                    Bucket: process.env.AWS_S3_BUCKET_APPLE, 
+                                    Key: req.query.gig_id + '/final_pkpasses/' + 
+                                         req.query.order_id + '.pkpass' 
+                                  };
+                                  var url = s3.getSignedUrl('getObject', params);
+                                  console.log('Got an AWS signed url', url);
+
+                                  //SYNC HACK. does it intro bug?
+                                  var files_in_tmp = [];
+                                  console.log('reading dir..');
+                                  files_in_tmp = fs.readdirSync(WRK_DIR);
+                                  console.log('deleting the files in dir..');
+                                    
+                                  for (var l in files_in_tmp) {
+                                    console.log(files_in_tmp[l]);
+                                    fs.unlinkSync(WRK_DIR + files_in_tmp[l]);
+                                  }
+                                  console.log('deleting the dir..');
+                                  fs.rmdirSync(WRK_DIR);
+
+
+    
+                                }
+                              }
+                            );
+
+
+                          }
+                        });
 
 
                         //you must set the mime type for the content to respond with
