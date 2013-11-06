@@ -460,8 +460,8 @@ function start_pkpass_generation(req, res, callback) {
 
 
     //start the function calls
-    hash_pass_json();
-    //construct_pass_json();
+    //hash_pass_json();
+    construct_pass_json();
 
   } //end make_the_pkpass()
 
