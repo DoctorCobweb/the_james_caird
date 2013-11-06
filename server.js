@@ -102,6 +102,8 @@ function start_pkpass_generation(req, res, callback) {
   var extracted_keys = []; //array of items for download from s3 for gig
   var pass_name = 'testler' + '.pkpass';
   var WRK_DIR;
+  var manifest_content = {};
+  var PKPASS_NUMBER_OF_PNG_FILES = 6;
 
 
   //Returns a random integer between min and max
@@ -217,7 +219,6 @@ function start_pkpass_generation(req, res, callback) {
       var params = {
           Bucket: process.env.AWS_S3_BUCKET_APPLE,
           Key: req.query.gig_id + '/' + extracted_keys[k]
-      
       };
 
       var path_for_the_file = WRK_DIR + extracted_keys[k];
@@ -252,7 +253,7 @@ function start_pkpass_generation(req, res, callback) {
 
 
 
-      //TODO: ERROR HANDLUNG
+      //TODO: ERROR HANDLUNG for stream implementation
       //WAY 2: using pipes. this works but there's no ERRROR HANDLING!!!!!
       //console.log(path_for_the_file);
       //createReadStream(): the data read from the stream only contains the raw HTTP
@@ -289,11 +290,79 @@ function start_pkpass_generation(req, res, callback) {
   }
 
 
+
   function make_the_pkpass() {
     console.log('in make_the_pkpass()');
 
-    var manifest_content = {};
-    var PKPASS_NUMBER_OF_PNG_FILES = 6;
+    //save it to file
+    //compute the hash 
+    //add hash to manifest.json
+
+    function construct_pass_json() {
+
+      //the extra custom stuff needed to make the unique pkpass
+      var extra = "\"description\"" + ':' + 
+                  "\"Admit" + req.query.order_number_of_tickets +  " for"   
+                  + req.query.order_main_event + "\"" + "," +
+
+
+                  "\"barcode\"" + ":" + "{" +
+                      "\"message\"" + ":" + "\"" + req.query.order_id + "\"" + "," +
+                      "\"format\"" + ":" + "\"PKBarcodeFormatPDF417\"" + "," +
+                      "\"messageEncoding\"" + ":" + "\"iso-8859-1\"" +
+                  "}," +
+                  "\"coupon\"" + ":" + "{" +
+                      "\"primaryFields\"" + ":" + "[" +
+                          "{" +
+                              "\"key\"" + ":" + "\"offer\"" + "," +
+                              "\"label\"" + ":" + "\"for " 
+                                                + req.query.order_main_event 
+                                                + "\"" + "," +
+                              "\"value\"" + ":" + "\"Admit " 
+                                                + req.query.order_number_of_tickets 
+                                                + "\"" +
+                          "}" +
+                        "]" +
+                 "}" +
+               "}";
+
+      //complete the pass.json file
+      //must close the files on error and when success finished writing to it.
+      fs.appendFile(WRK_DIR + 'pass.json', extra, function (err) {
+        if (err) { return callback(err); }    
+        console.log('appended the extra stuff to pass.json');
+
+        hash_pass_json();
+      });
+
+    } //end construct_pass_json
+
+
+
+    function hash_pass_json() {
+      //compute hash of pass.json file
+      console.log('computing the sha1 hash of pass.json...');
+      exec('openssl sha1 pass.json', {cwd: WRK_DIR}, function(err, stdout, stderr){
+        if(!err) {
+          console.log('computed the sha1 hash of pass.json');
+
+          var content = stdout;
+          var start_index_of_hash = content.indexOf('=') + 2
+          var hash = content.substring(start_index_of_hash, content.length - 1);
+
+          //put the (pass.json, hash) pair into the manifest_content object
+          manifest_content["pass.json"] = hash;
+        
+          compute_hash_of_image_files();
+        } else {
+          console.log(req.query.order_id + '.pkpass: '
+                      + 'OPENSSL_ERROR: Unable to sha1 pass.json file.' + err);
+        }
+      });
+    }  
+
+
+
 
 
     //ERRORS occur when using the tmpxxxx dir. but everything works when you use a prior
@@ -311,100 +380,91 @@ function start_pkpass_generation(req, res, callback) {
     //var wrk_dir ='./a_debugging_pkpass/';
 
 
-    //-------------------------------------------------------------------------
-    //BUG?: what happens if manifest.json has not been completely created
-    //and the .pkpass routines finish before that? incomplete manifest.json
-    //file -> invalid pass! callback embedding of these 2 procedures..?
-    //create the manifest.json file programatically
-    fs.readdir(WRK_DIR, function(err, names){
-
-      //compute hash of pass.json file
-      console.log('computing the sha1 hash of pass.json...');
-      exec('openssl sha1 pass.json', {cwd: WRK_DIR}, function(err, stdout, stderr){
-        if(!err) {
-          console.log('computed the sha1 hash of pass.json');
-
-          var content = stdout;
-          var start_index_of_hash = content.indexOf('=') + 2
-          var hash = content.substring(start_index_of_hash, content.length - 1);
-
-          //put the (pass.json, hash) pair into the manifest_content object
-          manifest_content["pass.json"] = hash;
-        } else {
-          console.log(req.query.order_id + '.pkpass: '
-                      + 'OPENSSL_ERROR: Unable to sha1 pass.json file.' + err);
-        }
-      });
-
-      console.log(req.query.order_id + '.pkpass: ' 
-                  + 'The current directory contains image files:');
-
-
-      for(var i = 0; i < names.length; i++) {
-        if (names[i].indexOf('.png') >= 0) {
-          console.log(req.query.order_id + '.pkpass: ' +  names[i]);
-
-          //used to call next step, openssl_step(), AFTER, the for-loop has gone through
-          //and found all .png files.
-          //a way to handle async callbacks happen waaayyyy later than the for-loop
-          //finishing.
-          var count = 0;
-
-          exec('openssl sha1 ' + names[i], {cwd: WRK_DIR}, function(err, stdout, stderr){
-
-            if(!err) {
-              //console.log('stdout: ' + stdout);
-              //console.log('names: ' + names[i]);
- 
-              var content = stdout;
-              var start_index_of_hash = content.indexOf('=') + 2
-              var left_brace = content.indexOf('(');
-              var right_brace = content.indexOf(')');
- 
-              //also, strip the newline character from end of hash.
-              var hash = content.substring(start_index_of_hash, content.length - 1);
-              var file_name = content.substring(left_brace + 1, right_brace);
- 
-              //put the (file_name, hash) pair into the manifest_content obj.
-              manifest_content[file_name] = hash;
- 
-              console.log(req.query.order_id + '.pkpass' 
-                + ' manifest_content.' + file_name + '=' + manifest_content[file_name]);
- 
-              fs.writeFile( WRK_DIR + 'manifest.json', JSON.stringify(manifest_content),
-                function(err){
-                  if (err) {
-                    throw err;
-                  } else {
-                    console.log('Pkpass:[' + req.query.gig_id
-                      + ']' + 'FILE_SAVED: manifest.json');
-
-                    
-                    
-                    count++;
-                    console.log('count: ' + count);
-                    if (count === PKPASS_NUMBER_OF_PNG_FILES) {
-                      //we have written all the .png files to disk, now we can go to 
-                      //next step
-                      openssl_step();
+    function compute_hash_of_image_files() {
+      //-------------------------------------------------------------------------
+      //BUG?: what happens if manifest.json has not been completely created
+      //and the .pkpass routines finish before that? incomplete manifest.json
+      //file -> invalid pass! callback embedding of these 2 procedures..?
+      //create the manifest.json file programatically
+      fs.readdir(WRK_DIR, function(err, names){
+  
+  
+        console.log(req.query.order_id + '.pkpass: ' 
+                    + 'The current directory contains image files:');
+  
+        //compute sha1 hash of all .png files
+        for(var i = 0; i < names.length; i++) {
+          if (names[i].indexOf('.png') >= 0) {
+            console.log(req.query.order_id + '.pkpass: ' +  names[i]);
+  
+            //used to call next step, openssl_step(), AFTER, the for-loop has gone 
+            //through and found all .png files.
+            //a way to handle async callbacks happen waaayyyy later than the for-loop
+            //finishing.
+            var count = 0;
+  
+            exec('openssl sha1 ' + names[i], {cwd: WRK_DIR}, 
+              function(err, stdout, stderr){
+  
+                if(!err) {
+                  //console.log('stdout: ' + stdout);
+                  //console.log('names: ' + names[i]);
+     
+                  var content = stdout;
+                  var start_index_of_hash = content.indexOf('=') + 2
+                  var left_brace = content.indexOf('(');
+                  var right_brace = content.indexOf(')');
+     
+                  //also, strip the newline character from end of hash.
+                  var hash = content.substring(start_index_of_hash, content.length - 1);
+                  var file_name = content.substring(left_brace + 1, right_brace);
+     
+                  //put the (file_name, hash) pair into the manifest_content obj.
+                  manifest_content[file_name] = hash;
+     
+                  console.log(req.query.order_id + '.pkpass' 
+                    + ' manifest_content.' + file_name + '=' 
+                    + manifest_content[file_name]);
+     
+                  fs.writeFile( WRK_DIR + 'manifest.json', 
+                    JSON.stringify(manifest_content),
+                    function(err){
+                      if (err) {
+                        throw err;
+                      } else {
+                        console.log('Pkpass:[' + req.query.gig_id
+                          + ']' + 'FILE_SAVED: manifest.json');
+    
+                        count++;
+                        console.log('count: ' + count);
+                        if (count === PKPASS_NUMBER_OF_PNG_FILES) {
+                          //we have written all the .png files to disk, now we can go to 
+                          //next step
+                          openssl_step();
+                        }
+    
+                      } 
                     }
-
-                  } 
+                  ); 
+                } else {
+                  console.log(req.query.order_id + '.pkpass: ' 
+                              + 'OPENSSL_ERROR: Unable to sha1 ' + names[i] + ' file.');
                 }
-              ); 
-            } else {
-              console.log(req.query.order_id + '.pkpass: ' 
-                          + 'OPENSSL_ERROR: Unable to sha1 ' + names[i] + ' file.');
-            }
-          }); //end calc sha1 for .png files
-        } //end if-names end in .png
-      } //end for-loop
-    }); //end fs.readdir
+              } //end exec callback
+            ); //end exec sha1 for .png files
+          } //end if-names end in .png
+        } //end for-loop
+      }); //end fs.readdir
+    } //end compute_hash_of_image_files
 
 
-
+    //start the function calls
+    //hash_pass_json();
+    construct_pass_json();
 
   } //end make_the_pkpass()
+
+
 
 
   function openssl_step() {
@@ -520,15 +580,15 @@ function start_pkpass_generation(req, res, callback) {
 
                                   //SYNC HACK. does it intro bug?
                                   var files_in_tmp = [];
-                                  console.log('reading dir..');
+                                  console.log('reading tmp dir');
                                   files_in_tmp = fs.readdirSync(WRK_DIR);
-                                  console.log('deleting the files in dir..');
+                                  console.log('deleting the files in tmp dir');
                                     
                                   for (var l in files_in_tmp) {
                                     console.log(files_in_tmp[l]);
                                     fs.unlinkSync(WRK_DIR + files_in_tmp[l]);
                                   }
-                                  console.log('deleting the dir..');
+                                  console.log('deleting tmp dir');
                                   fs.rmdirSync(WRK_DIR);
 
 
