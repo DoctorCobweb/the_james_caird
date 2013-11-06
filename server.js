@@ -310,8 +310,8 @@ function start_pkpass_generation(req, res, callback) {
 
                   "\"barcode\"" + ":" + "{" +
                       "\"message\"" + ":" + "\"" + req.query.order_id + "\"" + "," +
-                      "\"format\"" + ":" + "\"PKBarcodeFormatPDF417\"" + "," +
-                      //"\"format\"" + ":" + "\"QR\"" + "," +
+                      //"\"format\"" + ":" + "\"PKBarcodeFormatPDF417\"" + "," +
+                      "\"format\"" + ":" + "\"PKBarcodeFormatQR\"" + "," +
                       "\"messageEncoding\"" + ":" + "\"iso-8859-1\"" +
                   "}," +
                   "\"coupon\"" + ":" + "{" +
