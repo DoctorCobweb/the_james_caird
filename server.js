@@ -301,8 +301,6 @@ function start_pkpass_generation(req, res, callback) {
     function construct_pass_json() {
 
       //the extra custom stuff needed to make the unique pkpass
-      //apparently QR code format doesnt work on ios device at the moment. is it to do
-      //with messageEncoding??
       var extra = "\"description\"" + ':' + 
                   "\"Admit" + req.query.order_number_of_tickets +  " for"   
                   + req.query.order_main_event + "\"" + "," +
@@ -462,8 +460,8 @@ function start_pkpass_generation(req, res, callback) {
 
 
     //start the function calls
-    //hash_pass_json();
-    construct_pass_json();
+    hash_pass_json();
+    //construct_pass_json();
 
   } //end make_the_pkpass()
 
