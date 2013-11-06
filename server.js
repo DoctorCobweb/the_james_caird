@@ -548,7 +548,7 @@ function start_pkpass_generation(req, res, callback) {
                     
 
                         //no need to set the header here, do it from shackleton app
-                        //res.contentType('application/vnd.apple.pkpass');
+                        res.contentType('application/vnd.apple.pkpass');
                         res.sendfile(WRK_DIR + pass_name, function (err) {
                           if (err) {
                             return callback(err);
