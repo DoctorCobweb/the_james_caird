@@ -314,7 +314,7 @@ function start_pkpass_generation(req, res, callback) {
                                                 + "\"" +
                           "}," +
                           "{" +
-                              "\"key\"" + ":" + "\"offer\"" + "," +
+                              "\"key\"" + ":" + "\"third\"" + "," +
                               "\"label\"" + ":" + "\"DATE \"," +
                               "\"value\"" + ":" + "\"" 
                                                 + formatted_event_date 
@@ -323,14 +323,13 @@ function start_pkpass_generation(req, res, callback) {
 //this doesnt fit for a coupon style pkpass...
 /*
                           "{" +
-                              "\"key\"" + ":" + "\"offer\"" + "," +
+                              "\"key\"" + ":" + "\"fourth\"" + "," +
                               "\"label\"" + ":" + "\"DOORS \"," +
                               "\"value\"" + ":" + "\"" 
                                                 + req.query.order_opening_time 
                                                 + "\"" +
-                          "}," +
+                          "}" +
 */
-
                      "]" +
                   "}" +
                "}";
