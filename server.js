@@ -14,7 +14,8 @@ var application_root = __dirname,
     exec = require('child_process').exec,    
     https = require('https'),
     express_validator = require('express-validator'),
-    AWS = require('aws-sdk');
+    AWS = require('aws-sdk'),
+    moment = require('moment');
 
 
 
@@ -268,6 +269,11 @@ function start_pkpass_generation(req, res, callback) {
 
   function make_the_pkpass() {
     console.log('in make_the_pkpass()');
+    var formatted_event_date =  moment(req.query.order_event_date).format("MMM Do YY");
+
+    console.log('DATEEEEE: ' 
+               + moment(req.query.order_event_date).format("MMM Do YY")
+               );
 
     //save it to file
     //compute the hash 
@@ -298,7 +304,34 @@ function start_pkpass_generation(req, res, callback) {
                                                 + req.query.order_number_of_tickets 
                                                 + "\"" +
                           "}" +
-                        "]" +
+                        "]," +
+                     "\"secondaryFields\"" + ":" + "[" +   
+                          "{" +
+                              "\"key\"" + ":" + "\"second\"" + "," +
+                              "\"label\"" + ":" + "\"VENUE \"," +
+                              "\"value\"" + ":" + "\"" 
+                                                + req.query.order_venue 
+                                                + "\"" +
+                          "}," +
+                          "{" +
+                              "\"key\"" + ":" + "\"offer\"" + "," +
+                              "\"label\"" + ":" + "\"DATE \"," +
+                              "\"value\"" + ":" + "\"" 
+                                                + formatted_event_date 
+                                                + "\"" +
+                          "}," +
+//this doesnt fit for a coupon style pkpass...
+/*
+                          "{" +
+                              "\"key\"" + ":" + "\"offer\"" + "," +
+                              "\"label\"" + ":" + "\"DOORS \"," +
+                              "\"value\"" + ":" + "\"" 
+                                                + req.query.order_opening_time 
+                                                + "\"" +
+                          "}," +
+*/
+
+                     "]" +
                   "}" +
                "}";
 
