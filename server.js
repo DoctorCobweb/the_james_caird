@@ -104,6 +104,8 @@ function start_pkpass_generation(req, res, callback) {
   var WRK_DIR;
   var manifest_content = {};
   var PKPASS_NUMBER_OF_PNG_FILES = 6;
+  var file_count = 0;
+  var PKPASS_NUMBER_OF_FILES_IN_DIR= 9;
 
 
   //Returns a random integer between min and max
@@ -224,42 +226,27 @@ function start_pkpass_generation(req, res, callback) {
       var path_for_the_file = WRK_DIR + extracted_keys[k];
 
 
-      //WAY 1: verbose way...doesnt work because of async calls. for loop is finished
-      //before the first file's callback returns!
-      /*
-      s3.getObject(params, 
-        function (err, data) {
-          if (err) {
-            return callback(err);
-          } else {
-            //data.Body is of type Buffer
-            console.log('GOT A OBJECT FROM S3....');
-            console.log(data);
-            var path_for_the_file_1 = WRK_DIR + extracted_keys[k];
-
-            console.log('path_for_the_file_1' + path_for_the_file_1);
-            fs.writeFile(path_for_the_file_1, data.Body, function (err) {
-              if (err) {
-                return callback(err);
-              } else {
-               console.log('It\'s saved!');
-              }
-            }); 
-
-          }
-        }
-      ); 
-      */
-
-
-
       //TODO: ERROR HANDLUNG for stream implementation
-      //WAY 2: using pipes. this works but there's no ERRROR HANDLING!!!!!
+      //using pipes. this works but there's no ERRROR HANDLING!!!!!
       //console.log(path_for_the_file);
       //createReadStream(): the data read from the stream only contains the raw HTTP
       //_body_ contents.
       var file = fs.createWriteStream(path_for_the_file); 
-      s3.getObject(params).createReadStream().pipe(file);
+      //s3.getObject(params).createReadStream().pipe(file);
+      s3.getObject(params).createReadStream()
+        .on('data', function (chunk) {
+          console.log('S3 read stream: DATA EVENT');
+        })
+        .on('end', function () {
+          console.log('S3 read stream: END EVENT');
+          file_count++;
+          console.log('file_count: ' + file_count);
+          if (file_count === PKPASS_NUMBER_OF_FILES_IN_DIR) {
+            console.log('calling make_the_pkpass() because we have all the files.');
+            make_the_pkpass();
+          }
+        })
+        .pipe(file);
 
     } //end for loop
 
@@ -275,18 +262,6 @@ function start_pkpass_generation(req, res, callback) {
       }
 
     });
-
-
-
-    //############## HACK ######################
-    //got the files, now make the pkpass
-    //make_the_pkpass();
-    //if we wait for the files to download before moving on we get successful openssl
-    //operation i.e. the pkpass is successfully generated.
-    console.log('waiting 2000ms.......');
-    setTimeout(make_the_pkpass, 2000);
-
-
   }
 
 
@@ -324,7 +299,7 @@ function start_pkpass_generation(req, res, callback) {
                                                 + "\"" +
                           "}" +
                         "]" +
-                 "}" +
+                  "}" +
                "}";
 
       //complete the pass.json file
@@ -485,7 +460,10 @@ function start_pkpass_generation(req, res, callback) {
                          + "-in manifest.json -out signature -outform "
                          + "DER -passin pass:12345";
 
-    var openssl_stmt_4   = "jar cvf " + pass_name 
+    //c for create archive, f for filename called pass_name, M for DONT create the jar
+    //manifest file META-INF/MANIFEST.INF
+    var openssl_stmt_4   = "jar cfM " + pass_name 
+    //var openssl_stmt_4   = "zip -r " + pass_name 
                          + " manifest.json pass.json signature "
                          + "logo.png logo@2x.png icon.png icon@2x.png "
                          + "strip.png strip@2x.png";
@@ -548,7 +526,7 @@ function start_pkpass_generation(req, res, callback) {
                     
 
                         //no need to set the header here, do it from shackleton app
-                        res.contentType('application/vnd.apple.pkpass');
+                        //res.contentType('application/vnd.apple.pkpass');
                         res.sendfile(WRK_DIR + pass_name, function (err) {
                           if (err) {
                             return callback(err);
@@ -579,6 +557,7 @@ function start_pkpass_generation(req, res, callback) {
                                   var url = s3.getSignedUrl('getObject', params);
                                   console.log('Got an AWS signed url', url);
 
+    
                                   //SYNC HACK. does it intro bug?
                                   var files_in_tmp = [];
                                   console.log('reading tmp dir');
@@ -591,7 +570,6 @@ function start_pkpass_generation(req, res, callback) {
                                   }
                                   console.log('deleting tmp dir');
                                   fs.rmdirSync(WRK_DIR);
-
 
     
                                 }
