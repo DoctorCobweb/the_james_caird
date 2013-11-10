@@ -319,7 +319,7 @@ function start_pkpass_generation(req, res, callback) {
                               "\"value\"" + ":" + "\"" 
                                                 + formatted_event_date 
                                                 + "\"" +
-                          "}," +
+                          "}" +
 //this doesnt fit for a coupon style pkpass...
 /*
                           "{" +
