@@ -281,6 +281,14 @@ function start_pkpass_generation(req, res, callback) {
 
     function construct_pass_json() {
 
+      var the_message = req.query.order_id + '/////' +
+                        req.query.order_first_name + '/////' +
+                        req.query.order_last_name + '/////' +
+                        req.query.order_main_event + '/////' +
+                        req.query.order_number_of_tickets + '/////' +
+                        req.query.order_transaction_status;
+
+
       //the extra custom stuff needed to make the unique pkpass
       var extra = "\"description\"" + ':' + 
                   "\"Admit" + req.query.order_number_of_tickets +  " for"   
@@ -288,8 +296,8 @@ function start_pkpass_generation(req, res, callback) {
 
 
                   "\"barcode\"" + ":" + "{" +
-                      "\"message\"" + ":" + "\"" + req.query.order_id + "\"" + "," +
-                      //"\"format\"" + ":" + "\"PKBarcodeFormatPDF417\"" + "," +
+                      //"\"message\"" + ":" + "\"" + req.query.order_id + "\"" + "," +
+                      "\"message\"" + ":" + "\"" + the_message + "\"" + "," +
                       "\"format\"" + ":" + "\"PKBarcodeFormatQR\"" + "," +
                       "\"messageEncoding\"" + ":" + "\"iso-8859-1\"" +
                   "}," +
